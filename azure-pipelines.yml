@@ -1,0 +1,49 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  NODE_VERSION: '18'
+  ACR_SERVICE_CONNECTION: 'ACRConnection'
+  ACR_REPOSITORY: 'backend'
+
+steps:
+- checkout: self
+
+- task: NodeTool@0
+  displayName: 'Install Node.js'
+  inputs:
+    versionSpec: '$(NODE_VERSION)'
+
+- script: npm ci
+  displayName: 'Install dependencies'
+
+- script: |
+    docker run -d --name test-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=gamemarket -p 5432:5432 postgres:15
+    echo 'Waiting for Postgres...'
+    for i in $(seq 1 15); do docker exec test-db pg_isready -U postgres && break || sleep 2; done
+  displayName: 'Start ephemeral Postgres for tests'
+
+- script: |
+    DATABASE_URL=postgres://postgres:postgres@localhost:5432/gamemarket npm test
+  displayName: 'Run tests'
+
+- script: docker rm -f test-db || true
+  condition: always()
+  displayName: 'Cleanup test DB'
+
+- task: Docker@2
+  displayName: 'Build & Push image'
+  inputs:
+    containerRegistry: '$(ACR_SERVICE_CONNECTION)'
+    repository: '$(ACR_REPOSITORY)'
+    command: 'buildAndPush'
+    Dockerfile: 'Dockerfile'
+    buildContext: '.'
+    tags: |
+      $(Build.BuildId)
+      latest
