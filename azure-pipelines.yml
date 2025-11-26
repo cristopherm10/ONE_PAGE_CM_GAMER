@@ -33,6 +33,10 @@ steps:
     configMode: 'manual'
     cliProjectKey: 'CMGAMER_BACKEND'
     cliProjectName: 'CM Gamer Backend'
+    extraProperties: |
+      sonar.sources=.
+      sonar.exclusions=**/node_modules/**,**/__tests__/**,coverage/**
+      sonar.javascript.lcov.reportPaths=coverage/lcov.info
 
 - script: |
     docker run -d --name test-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=gamemarket -p 5432:5432 postgres:15
@@ -41,8 +45,16 @@ steps:
   displayName: 'Start ephemeral Postgres for tests'
 
 - script: |
-    DATABASE_URL=postgres://postgres:postgres@localhost:5432/gamemarket npm test
-  displayName: 'Run tests'
+    DATABASE_URL=postgres://postgres:postgres@localhost:5432/gamemarket npm test -- --coverage
+  displayName: 'Run tests with coverage'
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish coverage artifact'
+  condition: succeeded()
+  inputs:
+    PathtoPublish: 'coverage'
+    ArtifactName: 'coverage'
+    publishLocation: 'Container'
 
 - task: SonarCloudAnalyze@1
   condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
