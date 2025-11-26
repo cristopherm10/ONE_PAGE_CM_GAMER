@@ -17,21 +17,22 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 4000;
 
-app.get('/health', (req, res) => {
+function healthHandler(req, res) {
   res.json({ status: 'ok' });
-});
+}
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // Serve static files (if any) from public
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Items endpoint reads from root items.json if present
-app.get('/items', async (req, res) => {
+async function itemsHandler(req, res) {
   try {
     if (pool) {
       const { rows } = await pool.query('SELECT id, title, description, price, seller, created_at, image, stock, specs FROM items ORDER BY id');
       return res.json({ value: rows, Count: rows.length });
     }
-    // Fallback to items.json if DB not configured
     const itemsPath = path.join(__dirname, '..', 'items.json');
     if (fs.existsSync(itemsPath)) {
       const data = JSON.parse(fs.readFileSync(itemsPath, 'utf-8'));
@@ -41,12 +42,16 @@ app.get('/items', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch items', message: String(err) });
   }
-});
+}
+app.get('/items', itemsHandler);
+app.get('/api/items', itemsHandler);
 
-app.get('/health/db', async (req, res) => {
+async function dbHealthHandler(req, res) {
   const ok = await dbReady();
   res.json({ db: ok ? 'ok' : 'down' });
-});
+}
+app.get('/health/db', dbHealthHandler);
+app.get('/api/health/db', dbHealthHandler);
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
