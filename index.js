@@ -11,7 +11,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+export const app = express();
 app.use(cors());
 app.use(express.json());
 
@@ -48,6 +48,8 @@ app.get('/health/db', async (req, res) => {
   res.json({ db: ok ? 'ok' : 'down' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend listening on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Backend listening on port ${PORT}`);
+  });
+}
