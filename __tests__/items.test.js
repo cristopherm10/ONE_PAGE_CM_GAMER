@@ -38,9 +38,15 @@ describe('/items endpoint', () => {
     expect(res.body).toHaveProperty('value');
     expect(Array.isArray(res.body.value)).toBe(true);
     expect(res.body.value.length).toBe(2);
+    expect(res.body).toHaveProperty('Count');
+    expect(res.body.Count).toBe(2);
+    const titles = res.body.value.map(i => i.title);
+    expect(titles).toEqual(expect.arrayContaining(['Test Item 1','Test Item 2']));
     const item = res.body.value[0];
     for (const field of ['id','title','description','price','seller','created_at','image','stock','specs']) {
       expect(item).toHaveProperty(field);
     }
+    const second = res.body.value.find(i => i.title === 'Test Item 2');
+    expect(second.specs).toHaveProperty('cpu','i5');
   });
 });
