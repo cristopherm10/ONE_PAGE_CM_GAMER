@@ -10,6 +10,7 @@ variables:
   NODE_VERSION: '18'
   ACR_SERVICE_CONNECTION: 'ACRConnection'
   ACR_REPOSITORY: 'backend'
+  SONAR_TOKEN: $(SONAR_TOKEN)
 
 steps:
 - checkout: self
@@ -22,6 +23,17 @@ steps:
 - script: npm ci
   displayName: 'Install dependencies'
 
+# SonarCloud preparation (conditional on token present)
+- task: SonarCloudPrepare@1
+  condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+  inputs:
+    SonarCloud: 'SonarCloud'
+    organization: 'tu-organizacion'
+    scannerMode: 'CLI'
+    configMode: 'manual'
+    cliProjectKey: 'CMGAMER_BACKEND'
+    cliProjectName: 'CM Gamer Backend'
+
 - script: |
     docker run -d --name test-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=gamemarket -p 5432:5432 postgres:15
     echo 'Waiting for Postgres...'
@@ -31,6 +43,14 @@ steps:
 - script: |
     DATABASE_URL=postgres://postgres:postgres@localhost:5432/gamemarket npm test
   displayName: 'Run tests'
+
+- task: SonarCloudAnalyze@1
+  condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+
+- task: SonarCloudPublish@1
+  condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+  inputs:
+    pollingTimeoutSec: '300'
 
 - script: docker rm -f test-db || true
   condition: always()
