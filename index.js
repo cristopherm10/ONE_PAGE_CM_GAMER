@@ -7,6 +7,9 @@ import { fileURLToPath } from 'url';
 import { pool, dbReady } from './db.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 
 dotenv.config();
 
@@ -14,12 +17,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const app = express();
-app.use(cors());
+const allowedOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(s=>s.trim()).filter(Boolean) : ['http://localhost:8080'];
+app.use(cors({ origin: (origin, cb) => {
+  if (!origin) return cb(null, true);
+  if (allowedOrigins.includes(origin)) return cb(null, true);
+  return cb(new Error('CORS not allowed'), false);
+}, credentials: true }));
+app.use(helmet());
+app.use(rateLimit({ windowMs: 60_000, max: 120 }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 4000;
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'dev-secret-change-me');
 const JWT_EXPIRES = process.env.JWT_EXPIRES || '2h';
+if (!JWT_SECRET) {
+  console.warn('JWT_SECRET is not set. Set environment variable JWT_SECRET in production.');
+}
 
 function signToken(user) {
   return jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
@@ -77,10 +90,15 @@ app.get('/health/db', dbHealthHandler);
 app.get('/api/health/db', dbHealthHandler);
 
 // --- Auth Endpoints ---
+// Schemas
+const registerSchema = z.object({ email: z.string().email(), password: z.string().min(8) });
+const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
+
 // Register
 app.post('/auth/register', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'email_password_required' });
+  const parse = registerSchema.safeParse(req.body || {});
+  if (!parse.success) return res.status(400).json({ error: 'invalid_payload', details: parse.error.issues });
+  const { email, password } = parse.data;
   try {
     const existing = await pool.query('SELECT id FROM users WHERE email=$1', [email]);
     if (existing.rows.length) return res.status(409).json({ error: 'email_exists' });
@@ -96,8 +114,9 @@ app.post('/auth/register', async (req, res) => {
 
 // Login
 app.post('/auth/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'email_password_required' });
+  const parse = loginSchema.safeParse(req.body || {});
+  if (!parse.success) return res.status(400).json({ error: 'invalid_payload', details: parse.error.issues });
+  const { email, password } = parse.data;
   try {
     const found = await pool.query('SELECT id, email, password_hash, created_at FROM users WHERE email=$1', [email]);
     if (!found.rows.length) return res.status(401).json({ error: 'invalid_credentials' });
