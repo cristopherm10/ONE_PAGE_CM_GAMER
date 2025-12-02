@@ -9,7 +9,7 @@ pool:
 variables:
   NODE_VERSION: '18'
   ACR_SERVICE_CONNECTION: 'Docker_CM_GAMER'
-  ACR_REPOSITORY: 'backend'
+  ACR_REPOSITORY: 'cristophermunoz10/gamer-back'
   SONAR_SERVICE_CONNECTION: 'CMGAMER'
 
 steps:
