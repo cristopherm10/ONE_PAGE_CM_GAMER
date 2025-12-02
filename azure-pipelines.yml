@@ -11,7 +11,6 @@ variables:
   ACR_SERVICE_CONNECTION: 'Docker_CM_GAMER'
   ACR_REPOSITORY: 'backend'
   SONAR_SERVICE_CONNECTION: 'CMGAMER'
-  SONAR_TOKEN: $(SONAR_TOKEN)
 
 steps:
 - checkout: self
@@ -29,10 +28,10 @@ steps:
   condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
   inputs:
     SonarCloud: '$(SONAR_SERVICE_CONNECTION)'
-    organization: 'tu-organizacion'
+    organization: '$(SONAR_ORGANIZATION)'
     scannerMode: 'CLI'
     configMode: 'manual'
-    cliProjectKey: 'CMGAMER_BACKEND'
+    cliProjectKey: '$(SONAR_PROJECT_KEY)'
     cliProjectName: 'CM Gamer Backend'
     extraProperties: |
       sonar.sources=.
