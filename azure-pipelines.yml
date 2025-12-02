@@ -10,6 +10,7 @@ variables:
   NODE_VERSION: '18'
   ACR_SERVICE_CONNECTION: 'Docker_CM_GAMER'
   ACR_REPOSITORY: 'backend'
+  SONAR_SERVICE_CONNECTION: 'CMGAMER'
   SONAR_TOKEN: $(SONAR_TOKEN)
 
 steps:
@@ -27,7 +28,7 @@ steps:
 - task: SonarCloudPrepare@1
   condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
   inputs:
-    SonarCloud: 'SonarCloud'
+    SonarCloud: '$(SONAR_SERVICE_CONNECTION)'
     organization: 'tu-organizacion'
     scannerMode: 'CLI'
     configMode: 'manual'
