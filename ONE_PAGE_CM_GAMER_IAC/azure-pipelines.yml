@@ -15,7 +15,7 @@ variables:
 - name: SONAR_ORGANIZATION
   value: 'cmunozh11'
 - name: SONAR_PROJECT_KEY
-  value: 'ONE_PAGE_CM_GAMER_IAC'
+  value: 'cmunozh11_ONE_PAGE_CM_GAMER_IAC'
 
 stages:
 - stage: ValidateIaC
