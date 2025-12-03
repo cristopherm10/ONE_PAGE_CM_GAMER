@@ -2,6 +2,10 @@ trigger:
   branches:
     include:
       - main
+pr:
+  branches:
+    include:
+      - main
 
 pool:
   vmImage: ubuntu-latest
@@ -9,13 +13,13 @@ pool:
 variables:
 - group: ci-secrets
 - name: NODE_VERSION
-  value: '18'
+  value: '20'
 - name: SONAR_SERVICE_CONNECTION
   value: 'CMGAMER'
 - name: SONAR_ORGANIZATION
   value: 'cmunozh11'
 - name: SONAR_PROJECT_KEY
-  value: 'cmunozh11_ONE_PAGE_CM_GAMER_BACK'
+  value: 'ONE_PAGE_CM_GAMER_BACK'
 - name: AZURE_SERVICE_CONNECTION
   value: 'CMGAMER'
 - name: AZURE_WEBAPP_NAME
@@ -111,7 +115,7 @@ stages:
         extraProperties: |
           sonar.sources=.
           sonar.exclusions=**/node_modules/**,**/__tests__/**,coverage/**
-          sonar.javascript.lcov.reportPaths=$(Pipeline.Workspace)/coverage/coverage/lcov.info
+          sonar.javascript.lcov.reportPaths=$(Pipeline.Workspace)/coverage/lcov.info
 
     - task: SonarCloudAnalyze@1
       displayName: 'Run SonarCloud Analysis'
@@ -123,20 +127,20 @@ stages:
       inputs:
         pollingTimeoutSec: '300'
 
-- stage: Deploy
-  displayName: 'Deploy to Azure'
+- stage: Deploy_Back
+  displayName: 'Deploy backend CMGamer'
   dependsOn: Sonar
   condition: succeeded('Sonar')
   jobs:
-  - job: DeployBackend
-    displayName: 'Deploy artifact to Azure Web App'
+  - job: DeployBackJob
+    displayName: 'Deploy backend artifact to Azure Web App'
     steps:
     - download: current
       displayName: 'Download backend artifact'
       artifact: backend
 
     - task: AzureWebApp@1
-      displayName: 'Deploy backend to Azure Web App'
+      displayName: 'Deploy CMGamer BACK'
       inputs:
         azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
         appName: '$(AZURE_WEBAPP_NAME)'
@@ -144,8 +148,8 @@ stages:
 
 - stage: Performance
   displayName: 'JMeter performance tests'
-  dependsOn: Deploy
-  condition: succeeded('Deploy')
+  dependsOn: Deploy_Back
+  condition: succeeded('Deploy_Back')
   jobs:
   - job: JMeterTest
     steps:
