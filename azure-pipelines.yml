@@ -80,10 +80,3 @@ steps:
       $(Build.BuildId)
       latest
 
-variables:
-- group: ci-secrets
-- name: NODE_VERSION
-  value: '18'
-- name: WORKING_DIR
-  value: '.'
-...
