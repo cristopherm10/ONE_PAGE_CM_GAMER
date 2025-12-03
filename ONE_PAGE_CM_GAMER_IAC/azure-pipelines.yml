@@ -1,0 +1,122 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+- group: ci-secrets
+- name: DEPLOY_IAC
+  value: 'false'
+- name: SONAR_SERVICE_CONNECTION
+  value: 'SonarCloud-CMGamer'
+- name: SONAR_ORGANIZATION
+  value: 'cmunozh11'
+- name: SONAR_PROJECT_KEY
+  value: 'ONE_PAGE_CM_GAMER_IAC'
+
+stages:
+- stage: ValidateIaC
+  displayName: 'Validar IaC'
+  jobs:
+  - job: Validate
+    displayName: 'Validación con contenedores efímeros'
+    steps:
+    - checkout: self
+
+    - task: Bash@3
+      displayName: 'Verify Docker availability'
+      inputs:
+        targetType: inline
+        script: |
+          docker --version
+          docker compose version
+
+    - task: Bash@3
+      displayName: 'Validate Postgres seeds'
+      inputs:
+        targetType: inline
+        script: |
+          set -euo pipefail
+          docker run -d --name iac-db \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=gamemarket \
+            -v $(System.DefaultWorkingDirectory)/init-db:/docker-entrypoint-initdb.d:ro \
+            postgres:15
+          echo 'Waiting for Postgres to apply migrations...'
+          for i in {1..15}; do
+            docker exec iac-db pg_isready -U postgres && break || sleep 2
+          done
+          docker exec -i iac-db psql -U postgres -d gamemarket -c "SELECT COUNT(*) AS items_count FROM items;"
+          docker exec -i iac-db psql -U postgres -d gamemarket -c "SELECT COUNT(*) AS users_count FROM users;"
+
+    - task: Bash@3
+      displayName: 'Cleanup validation container'
+      condition: always()
+      inputs:
+        targetType: inline
+        script: |
+          docker rm -f iac-db 2>/dev/null || true
+
+- stage: Sonar
+  displayName: 'SonarCloud Analysis'
+  dependsOn: ValidateIaC
+  condition: and(succeeded('ValidateIaC'), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+  jobs:
+  - job: SonarAnalysis
+    displayName: 'Run SonarCloud analysis'
+    steps:
+    - checkout: self
+
+    - task: SonarCloudPrepare@1
+      displayName: 'Prepare analysis'
+      inputs:
+        SonarCloud: '$(SONAR_SERVICE_CONNECTION)'
+        organization: '$(SONAR_ORGANIZATION)'
+        scannerMode: 'Other'
+        projectKey: '$(SONAR_PROJECT_KEY)'
+        projectName: 'ONE_PAGE_CM_GAMER_IAC'
+        extraProperties: |
+          sonar.sources=.
+          sonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**
+
+    - task: SonarCloudAnalyze@1
+      displayName: 'Run SonarCloud Analysis'
+
+    - task: SonarCloudPublish@1
+      displayName: 'Publish Quality Gate'
+      inputs:
+        pollingTimeoutSec: '300'
+
+- stage: DeployIaC
+  displayName: 'Deploy IaC'
+  dependsOn:
+    - ValidateIaC
+    - Sonar
+  condition: and(succeeded('ValidateIaC'), ne(dependencies.Sonar.result, 'Failed'), eq(variables['DEPLOY_IAC'], 'true'))
+  jobs:
+  - job: Deploy
+    displayName: 'Aplicar docker-compose'
+    steps:
+    - checkout: self
+
+    - task: Bash@3
+      displayName: 'docker compose up'
+      inputs:
+        targetType: inline
+        script: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml pull
+          docker compose -f docker-compose.yml up --build -d
+          docker compose -f docker-compose.yml ps
+
+    - task: Bash@3
+      displayName: 'docker compose down'
+      condition: always()
+      inputs:
+        targetType: inline
+        script: |
+          docker compose -f docker-compose.yml down -v || true
