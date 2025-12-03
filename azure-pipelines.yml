@@ -10,78 +10,171 @@ variables:
 - group: ci-secrets
 - name: NODE_VERSION
   value: '18'
-- name: ACR_SERVICE_CONNECTION
-  value: 'Docker_CM_GAMER'
-- name: ACR_REPOSITORY
-  value: 'cristophermunoz10/gamer-back'
 - name: SONAR_SERVICE_CONNECTION
+  value: 'SonarCloud-CMGamer'
+- name: SONAR_ORGANIZATION
+  value: 'cmunozh11'
+- name: SONAR_PROJECT_KEY
+  value: 'ONE_PAGE_CM_GAMER_BACK'
+- name: AZURE_SERVICE_CONNECTION
   value: 'CMGAMER'
+- name: AZURE_WEBAPP_NAME
+  value: 'cm-gamer-backend'
+- name: JMETER_PLAN_PATH
+  value: 'tests/jmeter/backend.jmx'
 
-steps:
-- checkout: self
+stages:
+- stage: Build
+  displayName: 'Build & Test'
+  jobs:
+  - job: BuildBackend
+    displayName: 'Backend build, tests, artifacts'
+    steps:
+    - checkout: self
 
-- task: NodeTool@0
-  displayName: 'Install Node.js'
-  inputs:
-    versionSpec: '$(NODE_VERSION)'
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '$(NODE_VERSION)'
 
-- script: npm ci
-  displayName: 'Install dependencies'
+    - script: npm ci
+      displayName: 'Install dependencies'
 
-# SonarCloud preparation (conditional on token present)
-- task: SonarCloudPrepare@1
-  condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
-  inputs:
-    SonarCloud: '$(SONAR_SERVICE_CONNECTION)'
-    organization: '$(SONAR_ORGANIZATION)'
-    scannerMode: 'CLI'
-    configMode: 'manual'
-    cliProjectKey: '$(SONAR_PROJECT_KEY)'
-    cliProjectName: 'CM Gamer Backend'
-    extraProperties: |
-      sonar.sources=.
-      sonar.exclusions=**/node_modules/**,**/__tests__/**,coverage/**
-      sonar.javascript.lcov.reportPaths=coverage/lcov.info
+    - script: |
+        docker run -d --name test-db \
+          -e POSTGRES_PASSWORD=postgres \
+          -e POSTGRES_USER=postgres \
+          -e POSTGRES_DB=gamemarket \
+          -p 5432:5432 postgres:15
+        echo 'Waiting for Postgres...'
+        for i in $(seq 1 15); do docker exec test-db pg_isready -U postgres && break || sleep 2; done
+      displayName: 'Start ephemeral Postgres for tests'
 
-- script: |
-    docker run -d --name test-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=gamemarket -p 5432:5432 postgres:15
-    echo 'Waiting for Postgres...'
-    for i in $(seq 1 15); do docker exec test-db pg_isready -U postgres && break || sleep 2; done
-  displayName: 'Start ephemeral Postgres for tests'
+    - script: |
+        set -euo pipefail
+        DATABASE_URL=postgres://postgres:postgres@localhost:5432/gamemarket npm test -- --coverage
+      displayName: 'Run tests with coverage'
 
-- script: |
-    DATABASE_URL=postgres://postgres:postgres@localhost:5432/gamemarket npm test -- --coverage
-  displayName: 'Run tests with coverage'
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish coverage artifact'
+      inputs:
+        PathtoPublish: 'coverage'
+        ArtifactName: 'coverage'
+        publishLocation: 'Container'
 
-- task: PublishBuildArtifacts@1
-  displayName: 'Publish coverage artifact'
-  condition: succeeded()
-  inputs:
-    PathtoPublish: 'coverage'
-    ArtifactName: 'coverage'
-    publishLocation: 'Container'
+    - script: docker rm -f test-db || true
+      condition: always()
+      displayName: 'Cleanup test DB'
 
-- task: SonarCloudAnalyze@1
-  condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+    - script: |
+        npm prune --production
+      displayName: 'Prune dev dependencies for deploy'
 
-- task: SonarCloudPublish@1
-  condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
-  inputs:
-    pollingTimeoutSec: '300'
+    - task: ArchiveFiles@2
+      displayName: 'Archive backend package'
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/backend.zip'
+        replaceExistingArchive: true
 
-- script: docker rm -f test-db || true
-  condition: always()
-  displayName: 'Cleanup test DB'
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish backend artifact'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/backend.zip'
+        ArtifactName: 'backend'
+        publishLocation: 'Container'
 
-- task: Docker@2
-  displayName: 'Build & Push image'
-  inputs:
-    containerRegistry: '$(ACR_SERVICE_CONNECTION)'
-    repository: '$(ACR_REPOSITORY)'
-    command: 'buildAndPush'
-    Dockerfile: 'Dockerfile'
-    buildContext: '.'
-    tags: |
-      $(Build.BuildId)
-      latest
+- stage: Sonar
+  displayName: 'SonarCloud'
+  dependsOn: Build
+  condition: succeeded('Build')
+  jobs:
+  - job: SonarAnalysis
+    steps:
+    - checkout: self
+
+    - download: current
+      displayName: 'Download coverage artifact'
+      artifact: coverage
+
+    - task: SonarCloudPrepare@1
+      displayName: 'Prepare analysis'
+      condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+      inputs:
+        SonarCloud: '$(SONAR_SERVICE_CONNECTION)'
+        organization: '$(SONAR_ORGANIZATION)'
+        scannerMode: 'Other'
+        projectKey: '$(SONAR_PROJECT_KEY)'
+        projectName: 'ONE_PAGE_CM_GAMER_BACK'
+        extraProperties: |
+          sonar.sources=.
+          sonar.exclusions=**/node_modules/**,**/__tests__/**,coverage/**
+          sonar.javascript.lcov.reportPaths=$(Pipeline.Workspace)/coverage/coverage/lcov.info
+
+    - task: SonarCloudAnalyze@1
+      displayName: 'Run SonarCloud Analysis'
+      condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+
+    - task: SonarCloudPublish@1
+      displayName: 'Publish Quality Gate'
+      condition: and(succeeded(), ne(variables['SONAR_TOKEN'], ''), ne(variables['SONAR_TOKEN'], 'PLACEHOLDER'))
+      inputs:
+        pollingTimeoutSec: '300'
+
+- stage: Deploy
+  displayName: 'Deploy to Azure'
+  dependsOn: Sonar
+  condition: succeeded('Sonar')
+  jobs:
+  - job: DeployBackend
+    displayName: 'Deploy artifact to Azure Web App'
+    steps:
+    - download: current
+      displayName: 'Download backend artifact'
+      artifact: backend
+
+    - task: AzureWebApp@1
+      displayName: 'Deploy backend to Azure Web App'
+      inputs:
+        azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+        appName: '$(AZURE_WEBAPP_NAME)'
+        package: '$(Pipeline.Workspace)/backend/backend.zip'
+
+- stage: Performance
+  displayName: 'JMeter performance tests'
+  dependsOn: Deploy
+  condition: succeeded('Deploy')
+  jobs:
+  - job: JMeterTest
+    steps:
+    - checkout: self
+
+    - task: Bash@3
+      displayName: 'Install Apache JMeter'
+      inputs:
+        targetType: inline
+        script: |
+          set -euo pipefail
+          JMETER_VERSION=5.6.2
+          curl -sL https://downloads.apache.org/jmeter/binaries/apache-jmeter-${JMETER_VERSION}.tgz -o jmeter.tgz
+          tar -xzf jmeter.tgz
+          mv apache-jmeter-${JMETER_VERSION} jmeter
+
+    - task: Bash@3
+      displayName: 'Run JMeter plan'
+      inputs:
+        targetType: inline
+        script: |
+          set -euo pipefail
+          mkdir -p tests/jmeter
+          ./jmeter/bin/jmeter -n -t $(JMETER_PLAN_PATH) -l tests/jmeter/results.jtl
+
+    - task: PublishTestResults@2
+      displayName: 'Publish JMeter results'
+      inputs:
+        testResultsFiles: 'tests/jmeter/results.jtl'
+        testResultsFormat: 'JUnit'
+        failTaskOnFailedTests: true
 
