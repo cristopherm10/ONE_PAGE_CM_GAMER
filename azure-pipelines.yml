@@ -11,7 +11,7 @@ variables:
 - name: NODE_VERSION
   value: '18'
 - name: SONAR_SERVICE_CONNECTION
-  value: 'SonarCloud-CMGamer'
+  value: 'CMGAMER'
 - name: SONAR_ORGANIZATION
   value: 'cmunozh11'
 - name: SONAR_PROJECT_KEY
