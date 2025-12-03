@@ -7,10 +7,15 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  NODE_VERSION: '18'
-  ACR_SERVICE_CONNECTION: 'Docker_CM_GAMER'
-  ACR_REPOSITORY: 'cristophermunoz10/gamer-back'
-  SONAR_SERVICE_CONNECTION: 'CMGAMER'
+- group: ci-secrets
+- name: NODE_VERSION
+  value: '18'
+- name: ACR_SERVICE_CONNECTION
+  value: 'Docker_CM_GAMER'
+- name: ACR_REPOSITORY
+  value: 'cristophermunoz10/gamer-back'
+- name: SONAR_SERVICE_CONNECTION
+  value: 'CMGAMER'
 
 steps:
 - checkout: self
